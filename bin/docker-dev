@@ -1,0 +1,14 @@
+#!/bin/bash
+
+MACHINE_DRIVER=virtualbox
+REPO_NAME=$(basename `git rev-parse -q --show-toplevel 2>/dev/null` 2>/dev/null)
+MACHINE_NAME=${REPO_NAME:-docker}
+
+docker-machine create -d $MACHINE_DRIVER $MACHINE_NAME || :
+docker-machine start $MACHINE_NAME
+docker-machine ssh $MACHINE_NAME "tce-load -w -i avahi.tcz" \
+    && docker-machine ssh $MACHINE_NAME "sudo sed -i 's/#enable-dbus=yes/enable-dbus=no/g' /usr/local/etc/avahi/avahi-daemon.conf" \
+    && docker-machine ssh $MACHINE_NAME "sudo /usr/local/sbin/avahi-daemon -c || sudo /usr/local/sbin/avahi-daemon -D"
+
+docker-machine env $MACHINE_NAME
+echo "Docker machine available at $MACHINE_NAME.local"

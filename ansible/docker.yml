@@ -1,0 +1,39 @@
+---
+- hosts:        127.0.0.1
+  connection:   local
+
+  tasks:
+
+  - name: Update homebrew
+    homebrew: update_homebrew=yes
+
+  - name: Tap Caskroom
+    homebrew_tap: tap=caskroom/cask
+
+  - name: Install Caskroom
+    homebrew: name=brew-cask state=latest
+
+  - name: Check for VMware Fusion
+    shell: ls /Applications/ | grep -i "VMware Fusion"
+    register: fusion_installed
+    ignore_errors: True
+
+  - name: Check for Virtualbox
+    shell: ls /Applications/ | grep -i "VirtualBox"
+    register: virtualbox_installed
+    ignore_errors: True
+
+  - name: Install Virtualbox
+    homebrew_cask: name=virtualbox state=present
+    environment:
+      HOMEBREW_CASK_OPTS: --appdir=/Applications
+    when: fusion_installed.rc !=0  and virtualbox_installed.rc !=0
+
+  - name: Install Docker toolchain
+    homebrew: >
+      name={{item}}
+      state=latest
+    with_items:
+    - docker
+    - docker-machine
+    - docker-compose
