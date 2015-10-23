@@ -2,7 +2,7 @@
 
 ## Summary
 
-`Dockulator` is used to bootstrap a docker development environment on OSX.
+`docker-dev` is used to bootstrap a docker development environment on OSX.
 
 ## License
 

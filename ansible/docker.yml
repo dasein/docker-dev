@@ -4,9 +4,6 @@
 
   tasks:
 
-  - name: Update homebrew
-    homebrew: update_homebrew=yes
-
   - name: Tap Caskroom
     homebrew_tap: tap=caskroom/cask
 
