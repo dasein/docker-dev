@@ -1,14 +1,94 @@
-#!/bin/bash
+#!/usr/bin/env python
 
-MACHINE_DRIVER=virtualbox
-REPO_NAME=$(basename `git rev-parse -q --show-toplevel 2>/dev/null` 2>/dev/null)
-MACHINE_NAME=${REPO_NAME:-docker}
+"""Bring up docker development environment
 
-docker-machine create -d $MACHINE_DRIVER $MACHINE_NAME || :
-docker-machine start $MACHINE_NAME
-docker-machine ssh $MACHINE_NAME "tce-load -w -i avahi.tcz" \
-    && docker-machine ssh $MACHINE_NAME "sudo sed -i 's/#enable-dbus=yes/enable-dbus=no/g' /usr/local/etc/avahi/avahi-daemon.conf" \
-    && docker-machine ssh $MACHINE_NAME "sudo /usr/local/sbin/avahi-daemon -c || sudo /usr/local/sbin/avahi-daemon -D"
+"""
+import argparse
+import os
+import subprocess
+import sys
 
-docker-machine env $MACHINE_NAME
-echo "Docker machine available at $MACHINE_NAME.local"
+
+class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter,
+                      argparse.RawDescriptionHelpFormatter):
+    """Argparse formatter to display __doc__ string correctly"""
+    pass
+
+
+PARSER = argparse.ArgumentParser(description=__doc__,
+                               formatter_class=CustomFormatter)
+PARSER.add_argument('-d', '--driver', dest='MACHINE_DRIVER',
+                    default=os.getenv('MACHINE_DRIVER'),
+                    help='What driver to use to bring up docker-dev')
+PARSER.add_argument('machine_name', metavar='MACHINE_NAME', nargs='*', type=str,
+                    help='Name of docker-machine host')
+PARSER.add_argument('-v', '--verbose', dest='verbose',
+                    action='store_true',
+                    help='Be more verbose about what docker-dev is doing')
+ARGS = PARSER.parse_args()
+
+DEFAULT_MACHINE_ENV = {
+    'FUSION_CPU_COUNT': '4',
+    'VIRTUALBOX_CPU_COUNT': '4',
+    'FUSION_MEMORY_SIZE': '1024',
+    'VIRTUALBOX_MEMORY_SIZE': '1024',
+}
+
+env = os.environ.keys()
+os.environ.update({k:v for k,v in DEFAULT_MACHINE_ENV.iteritems() if k not in env})
+
+def run_shell_cmd(cmd, output=False):
+    """Run shell cmd"""
+
+    if ARGS.verbose:
+        print 'Running cmd: %s' % cmd
+
+    if output:
+        run = subprocess.check_output
+    else:
+        run = subprocess.check_call
+
+    try:
+        out = run(cmd, shell=True)
+    except subprocess.CalledProcessError, e:
+        sys.exit(1)
+
+    return out
+
+
+def docker_machine_start(name, driver):
+    """Bring up docker machine"""
+    run_shell_cmd('docker-machine create -d %(driver)s %(name)s || :' % locals())
+    run_shell_cmd('docker-machine start %(name)s' % locals())
+    run_shell_cmd('docker-machine scp /usr/local/docker-dev/machine/bootsync.sh %(name)s:/tmp/bootsync.sh' % locals())
+    run_shell_cmd('docker-machine ssh %(name)s sudo mv /tmp/bootsync.sh /var/lib/boot2docker/bootsync.sh' % locals())
+    run_shell_cmd('docker-machine ssh %(name)s /var/lib/boot2docker/bootsync.sh' % locals())
+    print "*"*50
+    run_shell_cmd('docker-machine env %(name)s' % locals())
+    print "*"*50
+    print "Docker machine available at %(name)s.local" % locals()
+
+
+def main():
+    """Do it"""
+    if ARGS.MACHINE_DRIVER:
+        driver = ARGS.MACHINE_DRIVER
+    elif os.path.isdir('/Applications/VMware Fusion.app/'):
+        driver = 'vmwarefusion'
+    else:
+        driver = 'virtualbox'
+
+    if ARGS.machine_name:
+        for name in ARGS.machine_name:
+            docker_machine_start(name, driver)
+    else:
+        repo_cmd = 'basename $(git rev-parse -q --show-toplevel 2>/dev/null) 2>/dev/null || :'
+        git_repo = run_shell_cmd(repo_cmd, output=True).strip()
+        if git_repo:
+            docker_machine_start(git_repo, driver)
+        else:
+            docker_machine_start('dev', driver)
+
+
+if __name__ == "__main__":
+    main()
