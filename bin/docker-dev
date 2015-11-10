@@ -2,8 +2,25 @@
 
 """Bring up docker development environment
 
+This is meant to be a wrapper script around docker-machine in order to
+facilitate some of the boilerplate associated around bringing up a docker
+development environmnet.
+
+Run docker-machine --help to see how you can further manage your docker
+development environment once it comes up.
+
+Right now docker-dev just tries to do the following things.
+
+- Set some sane CPU_COUNT and MEMORY_SIZE settings for your docker-machine
+- Guess your VM preference based off of what you have installed
+- Allow your machine name to be resolvable through multicast DNS (e.g.
+  MACHINE_NAME.local)
+
+Example:
+    MACHINE_NAME=foo docker-dev create && ping -c1 foo.local
 """
 import argparse
+import logging
 import os
 import subprocess
 import sys
@@ -15,18 +32,6 @@ class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter,
     pass
 
 
-PARSER = argparse.ArgumentParser(description=__doc__,
-                               formatter_class=CustomFormatter)
-PARSER.add_argument('-d', '--driver', dest='MACHINE_DRIVER',
-                    default=os.getenv('MACHINE_DRIVER'),
-                    help='What driver to use to bring up docker-dev')
-PARSER.add_argument('machine_name', metavar='MACHINE_NAME', nargs='*', type=str,
-                    help='Name of docker-machine host')
-PARSER.add_argument('-v', '--verbose', dest='verbose',
-                    action='store_true',
-                    help='Be more verbose about what docker-dev is doing')
-ARGS = PARSER.parse_args()
-
 DEFAULT_MACHINE_ENV = {
     'FUSION_CPU_COUNT': '4',
     'VIRTUALBOX_CPU_COUNT': '4',
@@ -34,14 +39,30 @@ DEFAULT_MACHINE_ENV = {
     'VIRTUALBOX_MEMORY_SIZE': '1024',
 }
 
-env = os.environ.keys()
-os.environ.update({k:v for k,v in DEFAULT_MACHINE_ENV.iteritems() if k not in env})
+PARSER = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=CustomFormatter)
+PARSER.add_argument('-v', '--verbose', dest='verbose',
+                    action='store_true',
+                    help='Be more verbose about what docker-dev is doing.')
+PARSER.add_argument('-b', '--branch', dest='branch',
+                    default='master',
+                    help='What git branch/tag to track for updates')
+PARSER.add_argument('-d', '--driver', dest='MACHINE_DRIVER',
+                    default=os.getenv('MACHINE_DRIVER'),
+                    help='What driver to use to bring up docker-dev. '
+                    'If not specified, tries to guess. '
+                    '[ vmwarefusion >> virtualbox ]')
+PARSER.add_argument('-n', '--name', dest='MACHINE_NAME',
+                    default=os.getenv('MACHINE_DRIVER', 'dev'),
+                    help='Name of docker machine.')
 
-def run_shell_cmd(cmd, output=False):
-    """Run shell cmd"""
+log = logging.getLogger('docker-dev')
 
-    if ARGS.verbose:
-        print 'Running cmd: %s' % cmd
+
+def cmd(cmd, output=False, cwd=None):
+    """Run shell cmd and return exit status or output"""
+
+    log.debug('Running cmd: %s', cmd)
 
     if output:
         run = subprocess.check_output
@@ -49,46 +70,86 @@ def run_shell_cmd(cmd, output=False):
         run = subprocess.check_call
 
     try:
-        out = run(cmd, shell=True)
+        out = run(cmd, shell=True, cwd=cwd)
     except subprocess.CalledProcessError, e:
         sys.exit(1)
 
     return out
 
 
-def docker_machine_start(name, driver):
-    """Bring up docker machine"""
-    run_shell_cmd('docker-machine create -d %(driver)s %(name)s || :' % locals())
-    run_shell_cmd('docker-machine start %(name)s' % locals())
-    run_shell_cmd('docker-machine scp /usr/local/docker-dev/machine/bootsync.sh %(name)s:/tmp/bootsync.sh' % locals())
-    run_shell_cmd('docker-machine ssh %(name)s sudo mv /tmp/bootsync.sh /var/lib/boot2docker/bootsync.sh' % locals())
-    run_shell_cmd('docker-machine ssh %(name)s /var/lib/boot2docker/bootsync.sh' % locals())
-    print "*"*50
-    run_shell_cmd('docker-machine env %(name)s' % locals())
-    print "*"*50
-    print "Docker machine available at %(name)s.local" % locals()
+def create(args):
+    """Create and start a docker-machine"""
 
+    drivers = ['vmwarefusion', 'virtualbox']
+    name = args.MACHINE_NAME
 
-def main():
-    """Do it"""
-    if ARGS.MACHINE_DRIVER:
-        driver = ARGS.MACHINE_DRIVER
+    if args.MACHINE_DRIVER in drivers:
+        driver = args.MACHINE_DRIVER
     elif os.path.isdir('/Applications/VMware Fusion.app/'):
         driver = 'vmwarefusion'
     else:
         driver = 'virtualbox'
 
-    if ARGS.machine_name:
-        for name in ARGS.machine_name:
-            docker_machine_start(name, driver)
+    cmd('docker-machine create -d %(driver)s %(name)s || :' % locals())
+    start(args)
+
+
+def start(args):
+    """Start the docker-machine"""
+    name = args.MACHINE_NAME
+
+    cmd('docker-machine start %s || :' % name)
+    cmd('docker-machine scp /usr/local/docker-dev/machine/bootsync.sh %s:/tmp/bootsync.sh' % name)
+    cmd('docker-machine ssh %s sudo mv /tmp/bootsync.sh /var/lib/boot2docker/bootsync.sh' % name)
+    cmd('docker-machine ssh %s /var/lib/boot2docker/bootsync.sh' % name)
+    log.info('*' * 50)
+    cmd('docker-machine env %s' % name)
+    log.info('*' * 50)
+    log.info('Docker machine available at %s.local' % name)
+    log.info('*' * 50)
+
+
+def stop(args):
+    """Stop the docker-machine"""
+    cmd('docker-machine stop %s' % args.MACHINE_NAME)
+
+
+def update(args):
+    """Update the docker-dev if installed in /usr/local/docker-dev"""
+    cwd = '/usr/local/docker-dev'
+    dirname = os.path.dirname(os.path.realpath(__file__))
+
+    if dirname == '/usr/local/docker-dev/bin':
+        cmd('git fetch https://github.com/dasein/docker-dev.git %s' % args.branch, cwd=cwd)
+        cmd('git reset --hard FETCH_HEAD', cwd=cwd)
     else:
-        repo_cmd = 'basename $(git rev-parse -q --show-toplevel 2>/dev/null) 2>/dev/null || :'
-        git_repo = run_shell_cmd(repo_cmd, output=True).strip()
-        if git_repo:
-            docker_machine_start(git_repo, driver)
-        else:
-            docker_machine_start('dev', driver)
+        log.info('docker-dev is not installed in %s (Skipping git update)', cwd)
+
+    playbook = os.path.join(dirname, '../ansible/docker.yml')
+    cmd('ansible-playbook %s -i 127.0.0.1,' % playbook)
 
 
-if __name__ == "__main__":
+def main():
+    """Setup and invoke docker-dev environment"""
+    logging.basicConfig(stream=sys.stderr, format='%(message)s')
+
+    env = os.environ.keys()
+    os.environ.update({k:v for k,v in DEFAULT_MACHINE_ENV.iteritems() if k not in env})
+
+    subparsers = PARSER.add_subparsers()
+    for command in [create, start, stop, update]:
+        s = subparsers.add_parser(command.__name__)
+        s.set_defaults(func=command)
+
+    args = PARSER.parse_args()
+
+    if args.verbose:
+        log.setLevel(logging.DEBUG)
+    else:
+        log.setLevel(logging.INFO)
+
+    args.func(args)
+
+
+if __name__ == '__main__':
     main()
