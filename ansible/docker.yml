@@ -31,6 +31,7 @@
       name={{item}}
       state=latest
     with_items:
+    - amazon-ecs-cli
     - docker
     - docker-machine
     - docker-compose
