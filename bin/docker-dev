@@ -120,7 +120,7 @@ def update(args):
     dirname = os.path.dirname(os.path.realpath(__file__))
 
     if dirname == '/usr/local/docker-dev/bin':
-        cmd('git fetch https://github.com/dasein/docker-dev.git %s' % args.branch, cwd=cwd)
+        cmd('git fetch -q https://github.com/dasein/docker-dev.git %s' % args.branch, cwd=cwd)
         cmd('git reset --hard FETCH_HEAD', cwd=cwd)
     else:
         log.info('docker-dev is not installed in %s (Skipping git update)', cwd)
