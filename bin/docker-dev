@@ -17,7 +17,14 @@ Right now docker-dev just tries to do the following things.
   MACHINE_NAME.local)
 
 Example:
+    docker-dev create hiworld
+
+    or
+
     MACHINE_NAME=foo docker-dev create && ping -c1 foo.local
+
+Note that all args can be set by the equivalently named environment
+variable. (e.g. MACHINE_DRIVER)
 """
 import argparse
 import logging
@@ -45,16 +52,13 @@ PARSER.add_argument('-v', '--verbose', dest='verbose',
                     action='store_true',
                     help='Be more verbose about what docker-dev is doing.')
 PARSER.add_argument('-b', '--branch', dest='branch',
-                    default='master',
+                    default=os.getenv('MACHINE_DRIVER', 'master'),
                     help='What git branch/tag to track for updates')
 PARSER.add_argument('-d', '--driver', dest='MACHINE_DRIVER',
                     default=os.getenv('MACHINE_DRIVER'),
                     help='What driver to use to bring up docker-dev. '
                     'If not specified, tries to guess. '
                     '[ vmwarefusion >> virtualbox ]')
-PARSER.add_argument('-n', '--name', dest='MACHINE_NAME',
-                    default=os.getenv('MACHINE_DRIVER', 'dev'),
-                    help='Name of docker machine.')
 
 log = logging.getLogger('docker-dev')
 
@@ -146,9 +150,14 @@ def main():
     env = os.environ.keys()
     os.environ.update({k:v for k,v in DEFAULT_MACHINE_ENV.iteritems() if k not in env})
 
+    bare_commands = [ update, ls ]
+    name_commands = [create, start, stop, rm]
+
     subparsers = PARSER.add_subparsers()
-    for command in [create, start, stop, update, rm, ls]:
+    for command in bare_commands + name_commands:
         s = subparsers.add_parser(command.__name__)
+        if command in name_commands:
+            s.add_argument('MACHINE_NAME', nargs='?', default=os.getenv('MACHINE_NAME'))
         s.set_defaults(func=command)
 
     args = PARSER.parse_args()
@@ -158,8 +167,11 @@ def main():
     else:
         log.setLevel(logging.INFO)
 
-    args.func(args)
+    if 'MACHINE_NAME' in args and not args.MACHINE_NAME:
+        log.info('MACHINE_NAME not set, using "dev" as machine name')
+        args.MACHINE_NAME = 'dev'
 
+    args.func(args)
 
 if __name__ == '__main__':
     main()
