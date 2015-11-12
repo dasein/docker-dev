@@ -32,8 +32,8 @@
   - stat: path=/usr/local/bin/docker
     register: sym
 
-  - name: Install Docker toolchain iff not installed from Docker Toolbox
-    when: sym.stat.islnk is defined and sym.stat.islnk
+  - name: Install Docker iff not installed from Docker Toolbox (default)
+    when: sym.stat.islnk is not defined or sym.stat.islnk
     homebrew: >
       name={{item}}
       state=latest
@@ -41,6 +41,12 @@
     - docker
     - docker-machine
     - docker-compose
+
+  - name: Install Docker Toolbox iff Docker toolchain not installed
+    homebrew_cask: name=dockertoolbox state=present
+    environment:
+      HOMEBREW_CASK_OPTS: --appdir=/Applications
+    when: sym.stat.islnk is defined
 
   - name: Install Docker third-party tools
     homebrew: >

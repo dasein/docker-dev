@@ -114,12 +114,12 @@ def start(args):
 
 
 def stop(args):
-    """Stop the docker-machine"""
+    """Stops the docker-machine"""
     cmd('docker-machine stop %s' % args.MACHINE_NAME)
 
 
 def update(args):
-    """Update the docker-dev if installed in /usr/local/docker-dev"""
+    """Updates docker-dev to the latest version"""
     cwd = '/usr/local/docker-dev'
     dirname = os.path.dirname(os.path.realpath(__file__))
 
@@ -133,13 +133,18 @@ def update(args):
     cmd('ansible-playbook %s -i 127.0.0.1,' % playbook)
 
 
+def upgrade(args):
+    """Upgrades docker-machine to latest version of boot2docker"""
+    cmd('docker-machine upgrade %s' % args.MACHINE_NAME)
+
+
 def rm(args):
-    """Remove the docker-machine"""
+    """Removes the docker-machine"""
     cmd('docker-machine rm %s' % args.MACHINE_NAME)
 
 
 def ls(args):
-    """List the docker-machine(s)"""
+    """Lists the docker-machine(s)"""
     cmd('docker-machine ls')
 
 
@@ -151,11 +156,11 @@ def main():
     os.environ.update({k:v for k,v in DEFAULT_MACHINE_ENV.iteritems() if k not in env})
 
     bare_commands = [ update, ls ]
-    name_commands = [create, start, stop, rm]
+    name_commands = [create, start, stop, rm, upgrade]
 
     subparsers = PARSER.add_subparsers()
     for command in bare_commands + name_commands:
-        s = subparsers.add_parser(command.__name__)
+        s = subparsers.add_parser(command.__name__, help=command.__doc__)
         if command in name_commands:
             s.add_argument('MACHINE_NAME', nargs='?', default=os.getenv('MACHINE_NAME'))
         s.set_defaults(func=command)
