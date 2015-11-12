@@ -136,7 +136,7 @@ def update(args):
 def upgrade(args):
     """Upgrades docker-machine to latest version of boot2docker"""
     cmd('docker-machine upgrade %s' % args.MACHINE_NAME)
-
+    start(args)
 
 def rm(args):
     """Removes the docker-machine"""

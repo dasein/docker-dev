@@ -42,12 +42,6 @@
     - docker-machine
     - docker-compose
 
-  - name: Install Docker Toolbox iff Docker toolchain not installed
-    homebrew_cask: name=dockertoolbox state=present
-    environment:
-      HOMEBREW_CASK_OPTS: --appdir=/Applications
-    when: sym.stat.islnk is defined
-
   - name: Install Docker third-party tools
     homebrew: >
       name={{item}}
