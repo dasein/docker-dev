@@ -29,12 +29,22 @@
       HOMEBREW_CASK_OPTS: --appdir=/Applications
     when: fusion_installed.rc !=0  and virtualbox_installed.rc !=0
 
-  - name: Install Docker toolchain
+  - stat: path=/usr/local/bin/docker
+    register: sym
+
+  - name: Install Docker toolchain iff not installed from Docker Toolbox
+    when: sym.stat.islnk is defined and sym.stat.islnk
+    homebrew: >
+      name={{item}}
+      state=latest
+    with_items:
+    - docker
+    - docker-machine
+    - docker-compose
+
+  - name: Install Docker third-party tools
     homebrew: >
       name={{item}}
       state=latest
     with_items:
     - amazon-ecs-cli
-    - docker
-    - docker-machine
-    - docker-compose
