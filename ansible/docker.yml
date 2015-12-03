@@ -48,3 +48,4 @@
       state=latest
     with_items:
     - amazon-ecs-cli
+    - kubernetes-cli
