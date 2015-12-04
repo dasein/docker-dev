@@ -51,8 +51,8 @@ PARSER = argparse.ArgumentParser(description=__doc__,
 PARSER.add_argument('-v', '--verbose', dest='verbose',
                     action='store_true',
                     help='Be more verbose about what docker-dev is doing.')
-PARSER.add_argument('-b', '--branch', dest='branch',
-                    default=os.getenv('MACHINE_DRIVER', 'master'),
+PARSER.add_argument('-b', '--branch', dest='GIT_BRANCH',
+                    default=os.getenv('GIT_BRANCH', 'master'),
                     help='What git branch/tag to track for updates')
 PARSER.add_argument('-d', '--driver', dest='MACHINE_DRIVER',
                     default=os.getenv('MACHINE_DRIVER'),
@@ -124,7 +124,7 @@ def update(args):
     dirname = os.path.dirname(os.path.realpath(__file__))
 
     if dirname == '/usr/local/docker-dev/bin':
-        cmd('git fetch -q https://github.com/dasein/docker-dev.git %s' % args.branch, cwd=cwd)
+        cmd('git fetch -q https://github.com/dasein/docker-dev.git %s' % args.GIT_BRANCH, cwd=cwd)
         cmd('git reset --hard FETCH_HEAD', cwd=cwd)
     else:
         log.info('docker-dev is not installed in %s (Skipping git update)', cwd)
