@@ -11,7 +11,7 @@
     homebrew_tap: tap=caskroom/cask
 
   - name: Install Caskroom
-    homebrew: name=caskroom/cask/brew-cask state=latest
+    homebrew: name=brew-cask state=latest
 
   - name: Check for VMware Fusion
     shell: ls /Applications/ | grep -i "VMware Fusion"
