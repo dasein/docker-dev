@@ -46,6 +46,8 @@ DEFAULT_MACHINE_ENV = {
     'VIRTUALBOX_MEMORY_SIZE': '1024',
 }
 
+CWD = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+
 PARSER = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=CustomFormatter)
 PARSER.add_argument('-v', '--verbose', dest='verbose',
@@ -54,20 +56,25 @@ PARSER.add_argument('-v', '--verbose', dest='verbose',
 PARSER.add_argument('-b', '--branch', dest='GIT_BRANCH',
                     default=os.getenv('GIT_BRANCH', 'master'),
                     help='What git branch/tag to track for updates')
+PARSER.add_argument('-c', '--cluster', dest='DOCKER_CLUSTER',
+                    default=os.getenv('DOCKER_CLUSTER', None),
+                    help='What docker orchestration to use for clustering')
+PARSER.add_argument('-t', '--token', dest='SWARM_TOKEN',
+                    default=os.getenv('SWARM_TOKEN', 'ddb2cdf717a829bd3d583986522f3809'),
+                    help='Token to use for swarm cluster')
 PARSER.add_argument('-d', '--driver', dest='MACHINE_DRIVER',
                     default=os.getenv('MACHINE_DRIVER'),
-                    help='What driver to use to bring up docker-dev. '
+                    help='VM driver to use for docker daemon'
                     'If not specified, tries to guess. '
                     '[ vmwarefusion >> virtualbox ]')
 
 log = logging.getLogger('docker-dev')
 
 
-def cmd(cmd, output=False, cwd=None):
+def cmd(cmd, output=False, cwd=CWD):
     """Run shell cmd and return exit status or output"""
 
     log.debug('Running cmd: %s', cmd)
-
     if output:
         run = subprocess.check_output
     else:
@@ -94,7 +101,12 @@ def create(args):
     else:
         driver = 'virtualbox'
 
-    cmd('docker-machine create -d %(driver)s %(name)s || :' % locals())
+    if args.DOCKER_CLUSTER == 'swarm':
+        swarm_args = '--swarm --swarm-master --swarm-discovery token://%s' % args.SWARM_TOKEN
+    else:
+        swarm_args = ''
+
+    cmd('docker-machine create %(swarm_args)s -d %(driver)s %(name)s || :' % locals())
     start(args)
 
 
@@ -106,8 +118,17 @@ def start(args):
     cmd('docker-machine scp /usr/local/docker-dev/machine/bootsync.sh %s:/tmp/bootsync.sh' % name)
     cmd('docker-machine ssh %s sudo mv /tmp/bootsync.sh /var/lib/boot2docker/bootsync.sh' % name)
     cmd('docker-machine ssh %s /var/lib/boot2docker/bootsync.sh' % name)
+
+    if args.DOCKER_CLUSTER == 'kubernetes':
+        swarm_args = ''
+        _start_kubernetes(args)
+    elif args.DOCKER_CLUSTER == 'swarm':
+        swarm_args = '--swarm'
+    else:
+        swarm_args = ''
+
     log.info('*' * 50)
-    cmd('docker-machine env %s' % name)
+    cmd('docker-machine env %s %s' % (swarm_args, name))
     log.info('*' * 50)
     log.info('Docker machine available at %s.local' % name)
     log.info('*' * 50)
@@ -120,16 +141,13 @@ def stop(args):
 
 def update(args):
     """Updates docker-dev to the latest version"""
-    cwd = '/usr/local/docker-dev'
-    dirname = os.path.dirname(os.path.realpath(__file__))
-
-    if dirname == '/usr/local/docker-dev/bin':
-        cmd('git fetch -q https://github.com/dasein/docker-dev.git %s' % args.GIT_BRANCH, cwd=cwd)
-        cmd('git reset --hard FETCH_HEAD', cwd=cwd)
+    if CWD == '/usr/local/docker-dev':
+        cmd('git fetch -q https://github.com/dasein/docker-dev.git %s' % args.GIT_BRANCH)
+        cmd('git reset --hard FETCH_HEAD')
     else:
-        log.info('docker-dev is not installed in %s (Skipping git update)', cwd)
+        log.info('docker-dev is not installed in /usr/local (Skipping git update)')
 
-    playbook = os.path.join(dirname, '../ansible/docker.yml')
+    playbook = os.path.join(CWD, 'ansible/docker.yml')
     cmd('ansible-playbook %s -i 127.0.0.1,' % playbook)
 
 
@@ -137,6 +155,7 @@ def upgrade(args):
     """Upgrades docker-machine to latest version of boot2docker"""
     cmd('docker-machine upgrade %s' % args.MACHINE_NAME)
     start(args)
+
 
 def rm(args):
     """Removes the docker-machine"""
@@ -146,6 +165,25 @@ def rm(args):
 def ls(args):
     """Lists the docker-machine(s)"""
     cmd('docker-machine ls')
+
+
+def _start_kubernetes(args):
+    """Start kubernetes on docker machine"""
+    log.info('Starting Kubernetes dev cluster')
+
+    env = 'eval "$(docker-machine env %s)"' % args.MACHINE_NAME
+
+    cmd('%s && docker-compose -f compose/kubernetes-dev.yml stop' % env)
+    cmd('%s && docker-compose -f compose/kubernetes-dev.yml rm -f' % env)
+    cmd('%s && docker ps -a -f "name=k8s_" -q | xargs docker rm -f' % env)
+    cmd('%s && docker-compose -f compose/kubernetes-dev.yml up -d' % env)
+    cmd('pkill "ssh.*8080:localhost" || :')
+    cmd('docker-machine ssh %s -f -N -L "8080:localhost:8080"' % args.MACHINE_NAME)
+    cmd('until $(kubectl cluster-info &> /dev/null); do sleep 1; done')
+    cmd('kubectl --namespace=kube-system create -f k8s/kube-ui-rc.yaml')
+    cmd('kubectl --namespace=kube-system create -f k8s/kube-ui-svc.yaml')
+    log.info('*' * 50)
+    cmd('kubectl cluster-info')
 
 
 def main():
