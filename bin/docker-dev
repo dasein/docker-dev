@@ -48,6 +48,8 @@ DEFAULT_MACHINE_ENV = {
 
 CWD = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
+CLUSTER_OPTIONS = [ None, 'kubernetes', 'swarm' ]
+
 PARSER = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=CustomFormatter)
 PARSER.add_argument('-v', '--verbose', dest='verbose',
@@ -57,8 +59,8 @@ PARSER.add_argument('-b', '--branch', dest='GIT_BRANCH',
                     default=os.getenv('GIT_BRANCH', 'master'),
                     help='What git branch/tag to track for updates')
 PARSER.add_argument('-c', '--cluster', dest='DOCKER_CLUSTER',
-                    default=os.getenv('DOCKER_CLUSTER', None),
-                    help='What docker orchestration to use for clustering')
+                    default=os.getenv('DOCKER_CLUSTER', None), choices=CLUSTER_OPTIONS,
+                    help='What docker orchestration to use for clustering DOCKER_CLUSTER')
 PARSER.add_argument('-t', '--token', dest='SWARM_TOKEN',
                     default=os.getenv('SWARM_TOKEN', 'ddb2cdf717a829bd3d583986522f3809'),
                     help='Token to use for swarm cluster')
@@ -173,17 +175,18 @@ def _start_kubernetes(args):
 
     env = 'eval "$(docker-machine env %s)"' % args.MACHINE_NAME
 
+    cmd('kubectl config set-cluster docker-dev --server=http://localhost:8080')
     cmd('%s && docker-compose -f compose/kubernetes-dev.yml stop' % env)
     cmd('%s && docker-compose -f compose/kubernetes-dev.yml rm -f' % env)
     cmd('%s && docker ps -a -f "name=k8s_" -q | xargs docker rm -f' % env)
     cmd('%s && docker-compose -f compose/kubernetes-dev.yml up -d' % env)
-    cmd('pkill "ssh.*8080:localhost" || :')
+    cmd('pkill -f "ssh.*8080:localhost" || :')
     cmd('docker-machine ssh %s -f -N -L "8080:localhost:8080"' % args.MACHINE_NAME)
-    cmd('until $(kubectl cluster-info &> /dev/null); do sleep 1; done')
-    cmd('kubectl --namespace=kube-system create -f k8s/kube-ui-rc.yaml')
-    cmd('kubectl --namespace=kube-system create -f k8s/kube-ui-svc.yaml')
+    cmd('until $(kubectl --cluster=docker-dev cluster-info &> /dev/null); do sleep 1; done')
+    cmd('kubectl --cluster=docker-dev --namespace=kube-system create -f k8s/kube-ui-rc.yaml')
+    cmd('kubectl --cluster=docker-dev --namespace=kube-system create -f k8s/kube-ui-svc.yaml')
     log.info('*' * 50)
-    cmd('kubectl cluster-info')
+    cmd('kubectl --cluster=docker-dev cluster-info')
 
 
 def main():
