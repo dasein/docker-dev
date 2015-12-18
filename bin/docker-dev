@@ -42,8 +42,8 @@ class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter,
 DEFAULT_MACHINE_ENV = {
     'FUSION_CPU_COUNT': '4',
     'VIRTUALBOX_CPU_COUNT': '4',
-    'FUSION_MEMORY_SIZE': '1024',
-    'VIRTUALBOX_MEMORY_SIZE': '1024',
+    'FUSION_MEMORY_SIZE': '4000',
+    'VIRTUALBOX_MEMORY_SIZE': '4000',
 }
 
 CWD = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
