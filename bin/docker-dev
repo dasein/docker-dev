@@ -130,9 +130,9 @@ def start(args):
         swarm_args = ''
 
     log.info('*' * 50)
-    cmd('docker-machine env %s %s' % (swarm_args, name))
-    log.info('*' * 50)
-    log.info('Docker machine available at %s.local' % name)
+    log.info('Docker machine available at %s.local (ping it)' % name)
+    out = cmd('docker-machine env %s %s' % (swarm_args, name), output=True)
+    log.info('\n%s', out.strip())
     log.info('*' * 50)
 
 
@@ -185,13 +185,14 @@ def _start_kubernetes(args):
     cmd('until $(kubectl --cluster=docker-dev cluster-info &> /dev/null); do sleep 1; done')
     cmd('kubectl --cluster=docker-dev --namespace=kube-system create -f k8s/kube-ui-rc.yaml')
     cmd('kubectl --cluster=docker-dev --namespace=kube-system create -f k8s/kube-ui-svc.yaml')
-    log.info('*' * 50)
+    log.info('Kube cluster is up')
+    log.info('Access using kubectl --cluster=docker-dev')
     cmd('kubectl --cluster=docker-dev cluster-info')
 
 
 def main():
     """Setup and invoke docker-dev environment"""
-    logging.basicConfig(stream=sys.stderr, format='%(message)s')
+    logging.basicConfig(stream=sys.stderr, format='[%(levelname)s] %(message)s')
 
     env = os.environ.keys()
     os.environ.update({k:v for k,v in DEFAULT_MACHINE_ENV.iteritems() if k not in env})
