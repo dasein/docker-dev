@@ -27,8 +27,10 @@ Note that all args can be set by the equivalently named environment
 variable. (e.g. MACHINE_DRIVER)
 """
 import argparse
+import datetime
 import logging
 import os
+import pickle
 import subprocess
 import sys
 
@@ -190,6 +192,22 @@ def _start_kubernetes(args):
     cmd('kubectl --cluster=docker-dev cluster-info')
 
 
+def _check_for_update():
+    now = datetime.datetime.now()
+    last_checked_file = os.path.join(CWD, '.check_update')
+
+    try:
+        check = pickle.load(open(last_checked_file, "rb"))
+    except IOError:
+        check = now
+        pickle.dump(now, open(last_checked_file, "wb"))
+
+    last_checked = now - check
+    if last_checked.days >= 1:
+        cmd('git fetch origin')
+        pickle.dump(now, open(last_checked_file, "wb"))
+
+
 def main():
     """Setup and invoke docker-dev environment"""
     logging.basicConfig(stream=sys.stderr, format='[%(levelname)s] %(message)s')
@@ -213,6 +231,11 @@ def main():
         log.setLevel(logging.DEBUG)
     else:
         log.setLevel(logging.INFO)
+
+    _check_for_update()
+    diff = cmd('git log remotes/origin/master ^HEAD', output=True)
+    if diff:
+        log.warn('Update available. Run "docker-dev update"')
 
     if 'MACHINE_NAME' in args and not args.MACHINE_NAME:
         log.info('MACHINE_NAME not set, using "dev" as machine name')
