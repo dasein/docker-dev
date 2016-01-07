@@ -173,16 +173,13 @@ def ls(args):
 
 def _start_kubernetes(args):
     """Start kubernetes on docker machine"""
+
+    _stop_kubernetes(args)
     log.info('Starting Kubernetes dev cluster')
 
     env = 'eval "$(docker-machine env %s)"' % args.MACHINE_NAME
 
-    cmd('kubectl config set-cluster docker-dev --server=http://localhost:8080')
-    cmd('%s && docker-compose -f compose/kubernetes-dev.yml stop' % env)
-    cmd('%s && docker-compose -f compose/kubernetes-dev.yml rm -f' % env)
-    cmd('%s && docker ps -a -f "name=k8s_" -q | xargs docker rm -f' % env)
     cmd('%s && docker-compose -f compose/kubernetes-dev.yml up -d' % env)
-    cmd('pkill -f "ssh.*8080:localhost" || :')
     cmd('docker-machine ssh %s -f -N -L "8080:localhost:8080"' % args.MACHINE_NAME)
     cmd('until $(kubectl --cluster=docker-dev cluster-info &> /dev/null); do sleep 1; done')
     cmd('kubectl --cluster=docker-dev --namespace=kube-system create -f k8s/kube-ui-rc.yaml')
@@ -190,6 +187,17 @@ def _start_kubernetes(args):
     log.info('Kube cluster is up')
     log.info('Access using kubectl --cluster=docker-dev')
     cmd('kubectl --cluster=docker-dev cluster-info')
+
+
+def _stop_kubernetes(args):
+    """Stop\Cleanup kubernetes on docker machine"""
+
+    env = 'eval "$(docker-machine env %s)"' % args.MACHINE_NAME
+
+    cmd('%s && docker-compose -f compose/kubernetes-dev.yml stop' % env)
+    cmd('%s && docker-compose -f compose/kubernetes-dev.yml rm -f' % env)
+    cmd('%s && docker ps -a -f "name=k8s_" -q | xargs docker rm -f' % env)
+    cmd('pkill -f "ssh.*8080:localhost" || :')
 
 
 def _check_for_update():
@@ -242,6 +250,7 @@ def main():
         args.MACHINE_NAME = 'dev'
 
     args.func(args)
+
 
 if __name__ == '__main__':
     main()
