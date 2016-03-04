@@ -1,6 +1,18 @@
 ---
 - hosts:        127.0.0.1
   connection:   local
+  vars:
+
+      brew_commit: HEAD
+
+      docker_brew: &docker_brew
+        - docker-machine
+        - docker-compose
+        - docker
+
+      third_party_brew: &third_party_brew
+        - amazon-ecs-cli
+        - kubernetes-cli
 
   tasks:
 
@@ -32,20 +44,32 @@
   - stat: path=/usr/local/bin/docker
     register: sym
 
-  - name: Install Docker iff not installed from Docker Toolbox (default)
+  - name: Remove docker tools for a clean install
     when: sym.stat.islnk is not defined or sym.stat.islnk
-    homebrew: >
-      name={{item}}
-      state=latest
-    with_items:
-    - docker
-    - docker-machine
-    - docker-compose
+    shell: brew uninstall --force {{ item }}
+    with_items: *docker_brew
+
+  - name: Update brew shallow commit to depth=1000
+    when: sym.stat.islnk is not defined or sym.stat.islnk
+    shell: git -C $(brew --prefix) fetch --depth=10000 origin master
+
+  - name: Checkout brew commit {{ brew_commit }}
+    when: sym.stat.islnk is not defined or sym.stat.islnk
+    shell: git -C $(brew --prefix) checkout {{ brew_commit }}
+
+  - name: Install Docker tools
+    when: sym.stat.islnk is not defined or sym.stat.islnk
+    shell: brew install {{ item }}
+    ignore_errors: True
+    with_items: *docker_brew
 
   - name: Install Docker third-party tools
     homebrew: >
       name={{item}}
       state=latest
-    with_items:
-    - amazon-ecs-cli
-    - kubernetes-cli
+    ignore_errors: True
+    with_items: *third_party_brew
+
+  - name: Revert brew back to master
+    when: sym.stat.islnk is not defined or sym.stat.islnk
+    shell: git -C $(brew --prefix) checkout master

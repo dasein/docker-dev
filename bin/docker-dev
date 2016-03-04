@@ -48,29 +48,38 @@ DEFAULT_MACHINE_ENV = {
     'VIRTUALBOX_MEMORY_SIZE': '4000',
 }
 
+# Keep docker versions syncd with the brew commit
+DOCKER_VERSION = '1.9.1'
+BREW_COMMIT  = '773b115a696516b51d0be261dda4a7437e9f61f6'
+BOOT2DOCKER_RESOURCE = 'https://github.com/boot2docker/boot2docker/releases/download/v%s/boot2docker.iso' % DOCKER_VERSION
+
 CWD = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 CLUSTER_OPTIONS = [ None, 'kubernetes', 'swarm' ]
 
-PARSER = argparse.ArgumentParser(description=__doc__,
+parser = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=CustomFormatter)
-PARSER.add_argument('-v', '--verbose', dest='verbose',
+parser.add_argument('-v', '--verbose', dest='verbose',
                     action='store_true',
                     help='Be more verbose about what docker-dev is doing.')
-PARSER.add_argument('-b', '--branch', dest='GIT_BRANCH',
+parser.add_argument('-l', '--latest', dest='latest',
+                    action='store_true',
+                    help='Use latest version of docker when creating or upgrading machines')
+parser.add_argument('-b', '--branch', dest='GIT_BRANCH',
                     default=os.getenv('GIT_BRANCH', 'master'),
-                    help='What git branch/tag to track for updates')
-PARSER.add_argument('-c', '--cluster', dest='DOCKER_CLUSTER',
+                    help='What docker-dev branch/tag to track for updates')
+parser.add_argument('-c', '--cluster', dest='DOCKER_CLUSTER',
                     default=os.getenv('DOCKER_CLUSTER', None), choices=CLUSTER_OPTIONS,
                     help='What docker orchestration to use for clustering DOCKER_CLUSTER')
-PARSER.add_argument('-t', '--token', dest='SWARM_TOKEN',
+parser.add_argument('-t', '--token', dest='SWARM_TOKEN',
                     default=os.getenv('SWARM_TOKEN', 'ddb2cdf717a829bd3d583986522f3809'),
                     help='Token to use for swarm cluster')
-PARSER.add_argument('-d', '--driver', dest='MACHINE_DRIVER',
+parser.add_argument('-d', '--driver', dest='MACHINE_DRIVER',
                     default=os.getenv('MACHINE_DRIVER'),
                     help='VM driver to use for docker daemon'
                     'If not specified, tries to guess. '
                     '[ vmwarefusion >> virtualbox ]')
+
 
 log = logging.getLogger('docker-dev')
 
@@ -151,13 +160,19 @@ def update(args):
     else:
         log.info('docker-dev is not installed in /usr/local (Skipping git update)')
 
-    playbook = os.path.join(CWD, 'ansible/docker.yml')
-    cmd('ansible-playbook %s -i 127.0.0.1,' % playbook)
-
 
 def upgrade(args):
-    """Upgrades docker-machine to latest version of boot2docker"""
-    cmd('docker-machine upgrade %s' % args.MACHINE_NAME)
+    """Upgrades docker client and server to latest version"""
+
+    docker_package = os.environ.get('BREW_COMMIT', 'master')
+    playbook = os.path.join(CWD, 'ansible/docker.yml')
+    cmd('ansible-playbook %s -i 127.0.0.1, --extra-vars brew_commit=%s' % (playbook,
+                                                                           docker_package))
+
+    status = cmd('docker-machine status %s || :' % args.MACHINE_NAME, output=True)
+    if status:
+        cmd('docker-machine upgrade %s' % args.MACHINE_NAME)
+
     start(args)
 
 
@@ -179,14 +194,15 @@ def _start_kubernetes(args):
 
     env = 'eval "$(docker-machine env %s)"' % args.MACHINE_NAME
 
+    cmd('kubectl config set-cluster dev --server=http://localhost:8080')
+    cmd('kubectl config set-context dev --cluster=dev')
     cmd('%s && docker-compose -f compose/kubernetes-dev.yml up -d' % env)
     cmd('docker-machine ssh %s -f -N -L "8080:localhost:8080"' % args.MACHINE_NAME)
-    cmd('until $(kubectl --cluster=docker-dev cluster-info &> /dev/null); do sleep 1; done')
-    cmd('kubectl --cluster=docker-dev --namespace=kube-system create -f k8s/kube-ui-rc.yaml')
-    cmd('kubectl --cluster=docker-dev --namespace=kube-system create -f k8s/kube-ui-svc.yaml')
-    log.info('Kube cluster is up')
-    log.info('Access using kubectl --cluster=docker-dev')
-    cmd('kubectl --cluster=docker-dev cluster-info')
+    cmd('until $(kubectl --cluster=dev cluster-info &> /dev/null); do sleep 1; done')
+    cmd('kubectl --cluster=dev --namespace=kube-system create -f k8s/kube-ui-rc.yaml')
+    cmd('kubectl --cluster=dev --namespace=kube-system create -f k8s/kube-ui-svc.yaml')
+    log.info('Access kube cluster using *kubectl --cluster=dev*')
+    cmd('kubectl --cluster=dev cluster-info')
 
 
 def _stop_kubernetes(args):
@@ -226,14 +242,14 @@ def main():
     bare_commands = [ update, ls ]
     name_commands = [create, start, stop, rm, upgrade]
 
-    subparsers = PARSER.add_subparsers()
+    subparsers = parser.add_subparsers()
     for command in bare_commands + name_commands:
         s = subparsers.add_parser(command.__name__, help=command.__doc__)
         if command in name_commands:
-            s.add_argument('MACHINE_NAME', nargs='?', default=os.getenv('MACHINE_NAME'))
+            s.add_argument('MACHINE_NAME', nargs='?', default=os.getenv('MACHINE_NAME', 'dev'))
         s.set_defaults(func=command)
 
-    args = PARSER.parse_args()
+    args = parser.parse_args()
 
     if args.verbose:
         log.setLevel(logging.DEBUG)
@@ -245,9 +261,14 @@ def main():
     if diff:
         log.warn('Update available. Run "docker-dev update"')
 
-    if 'MACHINE_NAME' in args and not args.MACHINE_NAME:
-        log.info('MACHINE_NAME not set, using "dev" as machine name')
-        args.MACHINE_NAME = 'dev'
+    if args.latest:
+        log.info('Using latest version of docker')
+        os.environ.update({'BREW_RESOURCE': 'docker'})
+    else:
+        log.info('Using v%s of docker', DOCKER_VERSION)
+        os.environ.update({'VIRTUALBOX_BOOT2DOCKER_URL': BOOT2DOCKER_RESOURCE,
+                           'FUSION_BOOT2DOCKER_URL': BOOT2DOCKER_RESOURCE,
+                           'BREW_COMMIT': BREW_COMMIT})
 
     args.func(args)
 
