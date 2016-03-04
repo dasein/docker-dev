@@ -6,7 +6,7 @@ etcd:
              '--data-dir=/var/etcd/data']
 
 kube-master:
-  image: gcr.io/google_containers/hyperkube:v1.1.7
+  image: gcr.io/google_containers/hyperkube:v1.1.8
   privileged: true
   net: host
   pid: host
@@ -31,7 +31,7 @@ kube-master:
             '--maximum-dead-containers=10']
 
 kube-proxy:
-  image: gcr.io/google_containers/hyperkube:v1.1.7
+  image: gcr.io/google_containers/hyperkube:v1.1.8
   privileged: true
   net: host
   pid: host
