@@ -199,10 +199,10 @@ def _start_kubernetes(args):
     cmd('%s && docker-compose -f compose/kubernetes-dev.yml up -d' % env)
     cmd('docker-machine ssh %s -f -N -L "8080:localhost:8080"' % args.MACHINE_NAME)
     cmd('until $(kubectl --cluster=dev cluster-info &> /dev/null); do sleep 1; done')
-    cmd('kubectl --cluster=dev --namespace=kube-system create -f k8s/kube-ui-rc.yaml')
-    cmd('kubectl --cluster=dev --namespace=kube-system create -f k8s/kube-ui-svc.yaml')
-    log.info('Access kube cluster using *kubectl --cluster=dev*')
-    cmd('kubectl --cluster=dev cluster-info')
+    cmd('kubectl --cluster=dev create -f k8s/ui.yaml')
+    cmd('kubectl --cluster=dev create -f k8s/dns.yaml')
+    log.info('Access kube cluster using *kubectl --context=dev*')
+    cmd('kubectl --context=dev cluster-info')
 
 
 def _stop_kubernetes(args):
