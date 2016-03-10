@@ -24,7 +24,6 @@ kube-master:
             '--',
             './hyperkube',
             'kubelet',
-            '--containerized',
             '--hostname-override=127.0.0.1',
             '--address=0.0.0.0',
             '--api-servers=http://localhost:8080',
@@ -42,3 +41,22 @@ kube-proxy:
             'proxy',
             '--master=http://127.0.0.1:8080',
             '--v=2']
+
+kube2sky:
+  image: gcr.io/google_containers/kube2sky:1.14
+  privileged: true
+  net: host
+  pid: host
+  command: ['--domain=internal',
+            '--kube_master_url=http://127.0.0.1:8080']
+
+skydns:
+  image: gcr.io/google_containers/skydns:2015-10-13-8c72f8c
+  privileged: true
+  net: host
+  pid: host
+  command: [ '-machines=http://127.0.0.1:4001',
+             '-addr=0.0.0.0:53',
+             '-ns-rotate=false',
+             '-domain=internal.',
+             '-verbose']

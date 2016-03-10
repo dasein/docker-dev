@@ -3,13 +3,7 @@ kind: Service
 metadata:
   name: kube-dns
   namespace: kube-system
-  labels:
-    k8s-app: kube-dns
-    kubernetes.io/cluster-service: "true"
-    kubernetes.io/name: "KubeDNS"
 spec:
-  selector:
-    k8s-app: kube-dns
   clusterIP:  10.0.0.10
   ports:
   - name: dns
@@ -22,67 +16,14 @@ spec:
 ---
 
 apiVersion: v1
-kind: ReplicationController
+kind: Endpoints
 metadata:
   name: kube-dns
   namespace: kube-system
-  labels:
-    k8s-app: kube-dns
-    kubernetes.io/cluster-service: "true"
-spec:
-  selector:
-    k8s-app: kube-dns
-  template:
-    metadata:
-      labels:
-        k8s-app: kube-dns
-        kubernetes.io/cluster-service: "true"
-    spec:
-      containers:
-      - name: etcd
-        image: gcr.io/google_containers/etcd-amd64:2.2.1
-        resources:
-          limits:
-            cpu: 100m
-            memory: 500Mi
-          requests:
-            cpu: 100m
-            memory: 50Mi
-        command:
-        - /usr/local/bin/etcd
-        - -data-dir
-        - /var/etcd/data
-        - -listen-client-urls
-        - http://127.0.0.1:2379,http://127.0.0.1:4001
-        - -advertise-client-urls
-        - http://127.0.0.1:2379,http://127.0.0.1:4001
-        - -initial-cluster-token
-        - skydns-etcd
-      - name: kube2sky
-        image: gcr.io/google_containers/kube2sky:1.14
-        resources:
-          limits:
-            cpu: 100m
-            memory: 50Mi
-        args:
-        - --domain=internal
-        - --kube_master_url=http://192.168.161.138:8080
-      - name: skydns
-        image: gcr.io/google_containers/skydns:2015-10-13-8c72f8c
-        resources:
-          limits:
-            cpu: 100m
-            memory: 50Mi
-        args:
-        - -machines=http://127.0.0.1:4001
-        - -addr=0.0.0.0:53
-        - -ns-rotate=false
-        - -domain=internal
-        - -verbose
-        ports:
-        - containerPort: 53
-          name: dns
-          protocol: UDP
-        - containerPort: 53
-          name: dns-tcp
-          protocol: TCP
+subsets:
+- addresses:
+  - ip: 0.0.0.0
+  ports:
+  - port: 53
+    protocol: UDP
+    name: dns
