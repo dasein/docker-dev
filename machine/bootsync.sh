@@ -1,15 +1,12 @@
 #!/bin/sh
 
-# TODO(hpfennig) Not sure if we want to do nfs.
-#
-# sudo umount /Users
-# sudo /usr/local/etc/init.d/nfs-client start
-# sleep 1
-# sudo mount.nfs 192.168.99.1:/Users /Users -v -o rw,async,noatime,rsize=32768,wsize=32768,proto=udp,udp,nfsvers=3
+# Mount default VM share
+# Workaround for https://github.com/docker/machine/issues/2050
 
-# Boot2docker machine broke vmwarefusion shares in 1.8.3
-# Temporary fix to make relative paths work
-rmdir /Users 2>/dev/null && ln -s /mnt/hgfs/Users /Users || :
+sudo umount /Users &>/dev/null || :
+sudo sh -c "mount --bind /mnt/hgfs/Users /Users \
+            || /etc/rc.d/vbox \
+            || :" &>/dev/null
 
 # User reliable tce repo
 echo "http://distro.ibiblio.org/tinycorelinux" > /opt/tcemirror
