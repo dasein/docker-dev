@@ -3,7 +3,8 @@
   connection:   local
   vars:
 
-      brew_commit: HEAD
+      uid:
+      gid:
 
       docker_brew: &docker_brew
         - docker-machine
@@ -44,32 +45,16 @@
   - stat: path=/usr/local/bin/docker
     register: sym
 
-  - name: Remove docker tools for a clean install
-    when: sym.stat.islnk is not defined or sym.stat.islnk
-    shell: brew uninstall --force {{ item }}
-    with_items: *docker_brew
-
-  - name: Update brew shallow commit to depth=1000
-    when: sym.stat.islnk is not defined or sym.stat.islnk
-    shell: git -C $(brew --prefix) fetch --depth=10000 origin master
-
-  - name: Checkout brew commit {{ brew_commit }}
-    when: sym.stat.islnk is not defined or sym.stat.islnk
-    shell: git -C $(brew --prefix) checkout {{ brew_commit }}
 
   - name: Install Docker tools
     when: sym.stat.islnk is not defined or sym.stat.islnk
-    shell: brew install {{ item }}
-    ignore_errors: True
+    homebrew: >
+      name={{item}}
+      state=latest
     with_items: *docker_brew
 
   - name: Install Docker third-party tools
     homebrew: >
       name={{item}}
       state=latest
-    ignore_errors: True
     with_items: *third_party_brew
-
-  - name: Revert brew back to master
-    when: sym.stat.islnk is not defined or sym.stat.islnk
-    shell: git -C $(brew --prefix) checkout master

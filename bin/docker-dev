@@ -48,11 +48,6 @@ DEFAULT_MACHINE_ENV = {
     'VIRTUALBOX_MEMORY_SIZE': '4000',
 }
 
-# Keep docker versions syncd with the brew commit
-DOCKER_VERSION = '1.9.1'
-BREW_COMMIT  = '773b115a696516b51d0be261dda4a7437e9f61f6'
-BOOT2DOCKER_RESOURCE = 'https://github.com/boot2docker/boot2docker/releases/download/v%s/boot2docker.iso' % DOCKER_VERSION
-
 CWD = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 CLUSTER_OPTIONS = [ None, 'kubernetes', 'swarm' ]
@@ -62,12 +57,9 @@ parser = argparse.ArgumentParser(description=__doc__,
 parser.add_argument('-v', '--verbose', dest='verbose',
                     action='store_true',
                     help='Be more verbose about what docker-dev is doing.')
-parser.add_argument('-l', '--latest', dest='latest',
-                    action='store_true',
-                    help='Use latest version of docker when creating or upgrading machines')
 parser.add_argument('-b', '--branch', dest='GIT_BRANCH',
                     default=os.getenv('GIT_BRANCH', 'master'),
-                    help='What docker-dev branch/tag to track for updates')
+                    help='What docker-dev branch/tag to track for upgrades')
 parser.add_argument('-c', '--cluster', dest='DOCKER_CLUSTER',
                     default=os.getenv('DOCKER_CLUSTER', None), choices=CLUSTER_OPTIONS,
                     help='What docker orchestration to use for clustering DOCKER_CLUSTER')
@@ -162,18 +154,17 @@ def update(args):
 
 
 def upgrade(args):
-    """Upgrades docker client and server to latest version"""
-
-    docker_package = os.environ.get('BREW_COMMIT', 'master')
+    """Upgrades docker-dev to the latest version"""
     playbook = os.path.join(CWD, 'ansible/docker.yml')
-    cmd('ansible-playbook %s -i 127.0.0.1, --extra-vars brew_commit=%s' % (playbook,
-                                                                           docker_package))
+    uid = cmd('id -u', output=True).strip()
+    gid = cmd('id -g', output=True).strip()
+    cmd('ansible-playbook --ask-sudo-pass %(playbook)s -i 127.0.0.1, '
+        '--extra-vars "uid=%(uid)s gid=%(gid)s"' % locals())
 
-    status = cmd('docker-machine status %s || :' % args.MACHINE_NAME, output=True)
+    status = cmd('docker-machine status %s 2>/dev/null || :' % args.MACHINE_NAME, output=True)
     if status:
         cmd('docker-machine upgrade %s' % args.MACHINE_NAME)
-
-    start(args)
+        start(args)
 
 
 def rm(args):
@@ -260,15 +251,6 @@ def main():
     diff = cmd('git log remotes/origin/master ^HEAD', output=True)
     if diff:
         log.warn('Update available. Run "docker-dev update"')
-
-    if args.latest:
-        log.info('Using latest version of docker')
-        os.environ.update({'BREW_RESOURCE': 'docker'})
-    else:
-        log.info('Using v%s of docker', DOCKER_VERSION)
-        os.environ.update({'VIRTUALBOX_BOOT2DOCKER_URL': BOOT2DOCKER_RESOURCE,
-                           'FUSION_BOOT2DOCKER_URL': BOOT2DOCKER_RESOURCE,
-                           'BREW_COMMIT': BREW_COMMIT})
 
     args.func(args)
 
