@@ -45,6 +45,21 @@
   - stat: path=/usr/local/bin/docker
     register: sym
 
+  - name: Add NFS share to /etc/exports
+    blockinfile:
+      dest: /etc/exports
+      create: yes
+      marker: "## {mark} Boot2Docker Developer Environment ##"
+      content: '/Users -alldirs -network 192.168.0.0 -mask 255.255.0.0 -mapall={{ uid }}:{{ gid }}'
+    become: yes
+    become_method: sudo
+    register: exports
+
+  - name: Restart nfsd
+    command: sudo nfsd restart
+    become: yes
+    become_method: sudo
+    when: exports.changed
 
   - name: Install Docker tools
     when: sym.stat.islnk is not defined or sym.stat.islnk
