@@ -193,17 +193,23 @@ def _start_kubernetes(args):
     cmd('kubectl --cluster=dev create -f k8s/ui.yaml')
     cmd('kubectl --cluster=dev create -f k8s/dns.yaml')
     log.info('Access kube cluster using *kubectl --context=dev*')
-    cmd('kubectl --context=dev cluster-info')
+    cmd('kubectl --namespace=default --context=dev cluster-info')
 
 
 def _stop_kubernetes(args):
     """Stop\Cleanup kubernetes on docker machine"""
 
     env = 'eval "$(docker-machine env %s)"' % args.MACHINE_NAME
-
-    cmd('%s && docker-compose -f compose/kubernetes-dev.yml stop' % env)
-    cmd('%s && docker-compose -f compose/kubernetes-dev.yml rm -f' % env)
+    log.info('Stopping\Cleaning Kubernetes dev cluster')
+    cmd('%s && docker-compose -f compose/kubernetes-dev.yml down' % env)
     cmd('%s && docker ps -a -f "name=k8s_" -q | xargs docker rm -f' % env)
+
+    # BUG: https://github.com/kubernetes/kubernetes/issues/23197
+    clean_cmd = 'mount | grep -o "on /var/lib/kubelet.* type" | cut -c 4-' \
+                ' | rev | cut -c 6- | rev | sort -r' \
+                ' | xargs --no-run-if-empty sudo umount' \
+                ' && sudo rm -Rf /var/lib/kubelet'
+    cmd('docker-machine ssh %s \'%s\'' % (args.MACHINE_NAME, clean_cmd))
     cmd('pkill -f "ssh.*8080:localhost" || :')
 
 
