@@ -124,6 +124,8 @@ def start(args):
     cmd('docker-machine ssh %s sudo mv /tmp/bootsync.sh /var/lib/boot2docker/bootsync.sh' % name)
     cmd('docker-machine ssh %s /var/lib/boot2docker/bootsync.sh' % name)
 
+    _start_nfs(args)
+
     if args.DOCKER_CLUSTER == 'kubernetes':
         swarm_args = ''
         _start_kubernetes(args)
@@ -155,8 +157,13 @@ def upgrade(args):
     playbook = os.path.join(CWD, 'ansible/docker.yml')
     uid = cmd('id -u', output=True).strip()
     gid = cmd('id -g', output=True).strip()
-    cmd('ansible-playbook  %(playbook)s -i 127.0.0.1, '
-        '--extra-vars "uid=%(uid)s gid=%(gid)s"' % locals())
+    machine_ip = cmd('docker-machine ip %s' % args.active_machine, output=True).strip()
+    mnet = '.'.join(machine_ip.split('.')[:2]) + '.0.0'
+
+    log.info('Performing upgrade of docker-dev environment')
+    log.info('You will be asked for sudo password to update /etc/export for nfsd')
+    cmd('ansible-playbook --ask-sudo-pass %(playbook)s -i 127.0.0.1, '
+        '--extra-vars "mnet=%(mnet)s uid=%(uid)s gid=%(gid)s"' % locals())
 
     status = cmd('docker-machine status %s 2>/dev/null || :' % args.MACHINE_NAME, output=True)
     if status:
@@ -184,6 +191,19 @@ def kup(args):
 def kdown(args):
     """Tear down a kubernetes cluster"""
     _stop_kubernetes(args)
+
+
+def _start_nfs(args):
+    """Launch nfs on the boot2docker instance"""
+    name = args.active_machine
+    nfs_args = '-o rw,async,noatime,rsize=32768,wsize=32768,proto=udp,udp,nfsvers=3'
+
+    machine_ip = cmd('docker-machine ip %s' % name, output=True).strip()
+    gip = '.'.join(machine_ip.split('.')[:3]) + '.1'
+
+    cmd('docker-machine ssh %s sudo umount /Users' % name)
+    cmd('docker-machine ssh %s sudo /usr/local/etc/init.d/nfs-client start' % name)
+    cmd('docker-machine ssh %(name)s sudo mount %(gip)s:/Users /Users %(nfs_args)s' % locals())
 
 
 def _start_kubernetes(args):
