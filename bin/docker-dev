@@ -124,8 +124,6 @@ def start(args):
     cmd('docker-machine ssh %s sudo mv /tmp/bootsync.sh /var/lib/boot2docker/bootsync.sh' % name)
     cmd('docker-machine ssh %s /var/lib/boot2docker/bootsync.sh' % name)
 
-    _start_nfs(args)
-
     if args.DOCKER_CLUSTER == 'kubernetes':
         swarm_args = ''
         _start_kubernetes(args)
@@ -160,9 +158,7 @@ def upgrade(args):
     playbook = os.path.join(CWD, 'ansible/docker.yml')
     uid = cmd('id -u', output=True).strip()
     gid = cmd('id -g', output=True).strip()
-    log.info('Performing upgrade of docker-dev environment')
-    log.info('You will be asked for sudo password to update /etc/export for nfsd')
-    cmd('ansible-playbook --ask-sudo-pass %(playbook)s -i 127.0.0.1, '
+    cmd('ansible-playbook  %(playbook)s -i 127.0.0.1, '
         '--extra-vars "uid=%(uid)s gid=%(gid)s"' % locals())
 
     status = cmd('docker-machine status %s 2>/dev/null || :' % args.MACHINE_NAME, output=True)
@@ -179,21 +175,6 @@ def rm(args):
 def ls(args):
     """Lists the docker-machine(s)"""
     cmd('docker-machine ls')
-
-
-def _start_nfs(args):
-    """Launch nfs on the boot2docker instance"""
-    name = args.MACHINE_NAME
-    nfs_args = '-o rw,async,noatime,rsize=32768,wsize=32768,proto=udp,udp,nfsvers=3'
-
-    machine_ip = cmd('docker-machine ip %s' % name, output=True).strip()
-    split_ip = machine_ip.split('.')
-    split_ip[3] = '1'
-    ip = '.'.join(split_ip)
-
-    cmd('docker-machine ssh %s sudo umount /Users' % name)
-    cmd('docker-machine ssh %s sudo /usr/local/etc/init.d/nfs-client start' % name)
-    cmd('docker-machine ssh %(name)s sudo mount %(ip)s:/Users /Users %(nfs_args)s' % locals())
 
 
 def _start_kubernetes(args):
