@@ -36,7 +36,7 @@ ln -fs /usr/local/docker-dev/bin/docker-dev /usr/local/bin
 hash 1>/dev/null
 
 echo "* Running ansible to install dependencies"
-ansible-playbook /usr/local/docker-dev/ansible/docker.yml -i 127.0.0.1,
+docker-dev upgrade
 
 echo "* Done"
 echo "*********************************************************"

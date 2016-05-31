@@ -144,17 +144,14 @@ def stop(args):
     cmd('docker-machine stop %s' % args.MACHINE_NAME)
 
 
-def update(args):
-    """Updates docker-dev to the latest version"""
+def upgrade(args):
+    """Upgrades docker-dev to the latest version"""
     if CWD == '/usr/local/docker-dev':
         cmd('git fetch -q https://github.com/dasein/docker-dev.git %s' % args.GIT_BRANCH)
         cmd('git reset --hard FETCH_HEAD')
     else:
         log.info('docker-dev is not installed in /usr/local (Skipping git update)')
 
-
-def upgrade(args):
-    """Upgrades docker-dev to the latest version"""
     playbook = os.path.join(CWD, 'ansible/docker.yml')
     uid = cmd('id -u', output=True).strip()
     gid = cmd('id -g', output=True).strip()
@@ -163,6 +160,8 @@ def upgrade(args):
 
     status = cmd('docker-machine status %s 2>/dev/null || :' % args.MACHINE_NAME, output=True)
     if status:
+        log.warn('Attempting *docker-machine upgrade %s*', args.MACHINE_NAME)
+        log.warn('Some upgrade paths are not supported and you may need to recreate your machine')
         cmd('docker-machine upgrade %s' % args.MACHINE_NAME)
         start(args)
 
@@ -236,7 +235,7 @@ def main():
     env = os.environ.keys()
     os.environ.update({k:v for k,v in DEFAULT_MACHINE_ENV.iteritems() if k not in env})
 
-    bare_commands = [ update, ls ]
+    bare_commands = [ ls ]
     name_commands = [create, start, stop, rm, upgrade]
 
     subparsers = parser.add_subparsers()
@@ -256,7 +255,7 @@ def main():
     _check_for_update()
     diff = cmd('git log remotes/origin/master ^HEAD', output=True)
     if diff:
-        log.warn('Update available. Run "docker-dev update"')
+        log.warn('Update available. Run "docker-dev upgrade"')
 
     args.func(args)
 
