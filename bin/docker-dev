@@ -33,7 +33,7 @@ import os
 import pickle
 import subprocess
 import sys
-
+import time
 
 class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter,
                       argparse.RawDescriptionHelpFormatter):
@@ -176,19 +176,40 @@ def ls(args):
     cmd('docker-machine ls')
 
 
+def kup(args):
+    """Bring up a kubernetes cluster"""
+    _start_kubernetes(args)
+
+
+def kdown(args):
+    """Tear down a kubernetes cluster"""
+    _stop_kubernetes(args)
+
+
 def _start_kubernetes(args):
     """Start kubernetes on docker machine"""
-
     _stop_kubernetes(args)
     log.info('Starting Kubernetes dev cluster')
 
-    env = 'eval "$(docker-machine env %s)"' % args.MACHINE_NAME
+    machine_ip = cmd('docker-machine ip %s || :' % args.active_machine, output=True).strip()
+    if not machine_ip:
+        machine_ip = 'localhost'
 
-    cmd('kubectl config set-cluster dev --server=http://localhost:8080')
+    cmd('kubectl config set-cluster dev --server=http://%s:8080' % machine_ip)
     cmd('kubectl config set-context dev --cluster=dev')
-    cmd('%s && docker-compose -f compose/kubernetes-dev.yml up -d' % env)
-    cmd('docker-machine ssh %s -f -N -L "8080:localhost:8080"' % args.MACHINE_NAME)
-    cmd('until $(kubectl --cluster=dev cluster-info &> /dev/null); do sleep 1; done')
+    cmd('%s && docker-compose -f compose/kubernetes-dev.yml up -d' % args.env)
+
+    log.info('Attempting to access kubernetes api on %s:8080' % machine_ip)
+    attempts = 0
+    while attempts < 3:
+        try:
+            time.sleep(5)
+            up = cmd('kubectl --context=dev cluster-info 2>/dev/null || :', output=True)
+            assert up != ''
+            break
+        except:
+            attempts += 1
+
     cmd('kubectl --cluster=dev create -f k8s/ui.yaml')
     cmd('kubectl --cluster=dev create -f k8s/dns.yaml')
     log.info('Access kube cluster using *kubectl --context=dev*')
@@ -198,18 +219,18 @@ def _start_kubernetes(args):
 def _stop_kubernetes(args):
     """Stop\Cleanup kubernetes on docker machine"""
 
-    env = 'eval "$(docker-machine env %s)"' % args.MACHINE_NAME
     log.info('Stopping\Cleaning Kubernetes dev cluster')
-    cmd('%s && docker-compose -f compose/kubernetes-dev.yml down' % env)
-    cmd('%s && docker ps -a -f "name=k8s_" -q | xargs docker rm -f' % env)
+    cmd('%s && docker-compose -f compose/kubernetes-dev.yml down' % args.env)
+    cmd('%s && docker ps -a -f "name=k8s_" -q | xargs docker rm -f' % args.env)
 
     # BUG: https://github.com/kubernetes/kubernetes/issues/23197
     clean_cmd = 'mount | grep -o "on /var/lib/kubelet.* type" | cut -c 4-' \
                 ' | rev | cut -c 6- | rev | sort -r' \
                 ' | xargs --no-run-if-empty sudo umount' \
                 ' && sudo rm -Rf /var/lib/kubelet'
-    cmd('docker-machine ssh %s \'%s\'' % (args.MACHINE_NAME, clean_cmd))
-    cmd('pkill -f "ssh.*8080:localhost" || :')
+
+    if args.active_machine:
+        cmd('docker-machine ssh %s \'%s\'' % (args.active_machine, clean_cmd))
 
 
 def _check_for_update():
@@ -235,7 +256,7 @@ def main():
     env = os.environ.keys()
     os.environ.update({k:v for k,v in DEFAULT_MACHINE_ENV.iteritems() if k not in env})
 
-    bare_commands = [ ls ]
+    bare_commands = [ls, kup, kdown]
     name_commands = [create, start, stop, rm, upgrade]
 
     subparsers = parser.add_subparsers()
@@ -243,6 +264,8 @@ def main():
         s = subparsers.add_parser(command.__name__, help=command.__doc__)
         if command in name_commands:
             s.add_argument('MACHINE_NAME', nargs='?', default=os.getenv('MACHINE_NAME', 'dev'))
+        if command in bare_commands:
+            s.add_argument('MACHINE_NAME', nargs='?', default=None)
         s.set_defaults(func=command)
 
     args = parser.parse_args()
@@ -251,6 +274,14 @@ def main():
         log.setLevel(logging.DEBUG)
     else:
         log.setLevel(logging.INFO)
+
+    if args.MACHINE_NAME:
+        args.env = 'eval "$(docker-machine env %s)"' % args.MACHINE_NAME
+        args.active_machine = args.MACHINE_NAME
+    else:
+        log.warn('Assuming currently configured docker environment')
+        args.env = ':'
+        args.active_machine = cmd('docker-machine active || :', output=True).strip()
 
     _check_for_update()
     diff = cmd('git log remotes/origin/master ^HEAD', output=True)
