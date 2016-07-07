@@ -7,7 +7,7 @@ etcd:
              '--data-dir=/var/etcd/data']
 
 kube-master:
-  image: gcr.io/google_containers/hyperkube:v1.2.4
+  image: gcr.io/google_containers/hyperkube:v1.2.5
   net: host
   pid: host
   privileged: true
