@@ -20,11 +20,8 @@
   - name: Update Homebrew
     homebrew: update_homebrew=yes
 
-  - name: Tap Caskroom
-    homebrew_tap: tap=caskroom/cask
-
-  - name: Install Caskroom
-    homebrew: name=brew-cask state=latest
+  - name: Update Ansible
+    homebrew: name=ansible state=latest
 
   - name: Check for VMware Fusion
     shell: ls /Applications/ | grep -i "VMware Fusion"

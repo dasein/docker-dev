@@ -201,7 +201,7 @@ def _start_kubernetes(args):
 
     log.info('Attempting to access kubernetes api on %s:8080' % machine_ip)
     attempts = 0
-    while attempts < 4:
+    while attempts < 10:
         try:
             time.sleep(5)
             up = cmd('kubectl --context=dev cluster-info 2>/dev/null || :', output=True)
