@@ -1,30 +1,34 @@
 #!/usr/bin/env python
 
-"""Bring up docker development environment
+"""Install dependencies for a docker dev environment
 
-This is meant to be a wrapper script around docker-machine in order to
-facilitate some of the boilerplate associated around bringing up a docker
-development environmnet.
+This utility installs dependencies to do local development on OSX with
+docker and kubernetes. To upgrade to the latest version of the docker
+development tools, just run:
 
-Run docker-machine --help to see how you can further manage your docker
-development environment once it comes up.
+   docker-dev upgrade
 
-Right now docker-dev just tries to do the following things.
+This command uses ansible the the brew package repository to install all
+required dependencies. Once run, you can use some of the tools installed to
+begin working with docker or kubernetes.
 
-- Set some sane CPU_COUNT and MEMORY_SIZE settings for your docker-machine
-- Guess your VM preference based off of what you have installed
-- Allow your machine name to be resolvable through multicast DNS (e.g.
-  MACHINE_NAME.local)
+To bring up a kubernetes development enviroment using minikube, run the
+following:
 
-Example:
-    docker-dev create hiworld
+   minikube start --vm-driver vmwarefusion
+                  --cpus 4
+                  --memory 4096
+                  --disk-size 50
+   eval $(minikube docker-env)
 
-    or
+To bring docker only dev enviroment using docker-machine, run this:
 
-    MACHINE_NAME=foo docker-dev create && ping -c1 foo.local
+   docker-machine create dev --driver vmwarefusion
+                             --vmwarefusion-cpu-count 4
+                             --vmwarefusion-memory-size 4096
+                             --vmwarefusion-disk-size 50000
+   eval $(docker-machine env dev)
 
-Note that all args can be set by the equivalently named environment
-variable. (e.g. MACHINE_DRIVER)
 """
 import argparse
 import datetime
@@ -32,8 +36,9 @@ import logging
 import os
 import pickle
 import subprocess
+import re
 import sys
-import time
+
 
 class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter,
                       argparse.RawDescriptionHelpFormatter):
@@ -41,16 +46,8 @@ class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter,
     pass
 
 
-DEFAULT_MACHINE_ENV = {
-    'FUSION_CPU_COUNT': '4',
-    'VIRTUALBOX_CPU_COUNT': '4',
-    'FUSION_MEMORY_SIZE': '4000',
-    'VIRTUALBOX_MEMORY_SIZE': '4000',
-}
-
 CWD = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
-CLUSTER_OPTIONS = [ None, 'kubernetes', 'swarm' ]
 
 parser = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=CustomFormatter)
@@ -60,18 +57,6 @@ parser.add_argument('-v', '--verbose', dest='verbose',
 parser.add_argument('-b', '--branch', dest='GIT_BRANCH',
                     default=os.getenv('GIT_BRANCH', 'master'),
                     help='What docker-dev branch/tag to track for upgrades')
-parser.add_argument('-c', '--cluster', dest='DOCKER_CLUSTER',
-                    default=os.getenv('DOCKER_CLUSTER', None), choices=CLUSTER_OPTIONS,
-                    help='What docker orchestration to use for clustering DOCKER_CLUSTER')
-parser.add_argument('-t', '--token', dest='SWARM_TOKEN',
-                    default=os.getenv('SWARM_TOKEN', 'ddb2cdf717a829bd3d583986522f3809'),
-                    help='Token to use for swarm cluster')
-parser.add_argument('-d', '--driver', dest='MACHINE_DRIVER',
-                    default=os.getenv('MACHINE_DRIVER'),
-                    help='VM driver to use for docker daemon'
-                    'If not specified, tries to guess. '
-                    '[ vmwarefusion >> virtualbox ]')
-
 
 log = logging.getLogger('docker-dev')
 
@@ -92,57 +77,18 @@ def cmd(cmd, output=False, cwd=CWD):
 
     return out
 
+def version(args):
+    """Returns versions  the current dev environment"""
+    kubectl = re.findall('GitVersion:"(.*?)"', cmd('kubectl version --client || :', output=True))
+    minikube = re.findall('minikube version: (.*)', cmd('minikube version || :', output=True))
+    compose = re.findall('version (.*?),', cmd('docker-compose version || :', output=True))
+    docker = re.findall('^(v.*?)$', cmd('docker version --format="v{{.Client.Version}}" || :', output=True))
 
-def create(args):
-    """Create and start a docker-machine"""
-
-    drivers = ['vmwarefusion', 'virtualbox']
-    name = args.MACHINE_NAME
-
-    if args.MACHINE_DRIVER in drivers:
-        driver = args.MACHINE_DRIVER
-    elif os.path.isdir('/Applications/VMware Fusion.app/'):
-        driver = 'vmwarefusion'
-    else:
-        driver = 'virtualbox'
-
-    if args.DOCKER_CLUSTER == 'swarm':
-        swarm_args = '--swarm --swarm-master --swarm-discovery token://%s' % args.SWARM_TOKEN
-    else:
-        swarm_args = ''
-
-    cmd('docker-machine create %(swarm_args)s -d %(driver)s %(name)s || :' % locals())
-    start(args)
-
-
-def start(args):
-    """Start the docker-machine"""
-    name = args.MACHINE_NAME
-
-    cmd('docker-machine start %s || :' % name)
-    cmd('docker-machine scp /usr/local/docker-dev/machine/bootsync.sh %s:/tmp/bootsync.sh' % name)
-    cmd('docker-machine ssh %s sudo mv /tmp/bootsync.sh /var/lib/boot2docker/bootsync.sh' % name)
-    cmd('docker-machine ssh %s /var/lib/boot2docker/bootsync.sh' % name)
-
-    if args.DOCKER_CLUSTER == 'kubernetes':
-        swarm_args = ''
-        _start_kubernetes(args)
-    elif args.DOCKER_CLUSTER == 'swarm':
-        swarm_args = '--swarm'
-    else:
-        swarm_args = ''
-
-    log.info('*' * 50)
-    log.info('Docker machine available at %s.local (ping it)' % name)
-    out = cmd('docker-machine env %s %s' % (swarm_args, name), output=True)
-    log.info('\n%s', out.strip())
-    log.info('*' * 50)
-
-
-def stop(args):
-    """Stops the docker-machine"""
-    cmd('docker-machine stop %s' % args.MACHINE_NAME)
-
+    print 'docker-dev: %s' % cmd('git log --oneline -n1', output=True).strip()
+    print 'kubectl client: %s' % tuple(kubectl)
+    print 'minikube: %s' % tuple(minikube)
+    print 'docker-compose: %s' % tuple(compose)
+    print 'docker client: %s' % tuple(docker)
 
 def upgrade(args):
     """Upgrades docker-dev to the latest version"""
@@ -153,84 +99,7 @@ def upgrade(args):
         log.info('docker-dev is not installed in /usr/local (Skipping git update)')
 
     playbook = os.path.join(CWD, 'ansible/docker.yml')
-    uid = cmd('id -u', output=True).strip()
-    gid = cmd('id -g', output=True).strip()
-    cmd('ansible-playbook  %(playbook)s -i 127.0.0.1, '
-        '--extra-vars "uid=%(uid)s gid=%(gid)s"' % locals())
-
-    status = cmd('docker-machine status %s 2>/dev/null || :' % args.MACHINE_NAME, output=True)
-    if status:
-        log.warn('Attempting *docker-machine upgrade %s*', args.MACHINE_NAME)
-        log.warn('Some upgrade paths are not supported and you may need to recreate your machine')
-        cmd('docker-machine upgrade %s' % args.MACHINE_NAME)
-        start(args)
-
-
-def rm(args):
-    """Removes the docker-machine"""
-    cmd('docker-machine rm %s' % args.MACHINE_NAME)
-
-
-def ls(args):
-    """Lists the docker-machine(s)"""
-    cmd('docker-machine ls')
-
-
-def kup(args):
-    """Bring up a kubernetes cluster"""
-    _start_kubernetes(args)
-
-
-def kdown(args):
-    """Tear down a kubernetes cluster"""
-    _stop_kubernetes(args)
-
-
-def _start_kubernetes(args):
-    """Start kubernetes on docker machine"""
-    _stop_kubernetes(args)
-    log.info('Starting Kubernetes dev cluster')
-
-    machine_ip = cmd('docker-machine ip %s || :' % args.active_machine, output=True).strip()
-    if not machine_ip:
-        machine_ip = 'localhost'
-
-    cmd('kubectl config set-cluster dev --server=http://%s:8080' % machine_ip)
-    cmd('kubectl config set-context dev --cluster=dev')
-    cmd('%s && docker-compose -f compose/kubernetes-dev.yml up -d' % args.env)
-
-    log.info('Attempting to access kubernetes api on %s:8080' % machine_ip)
-    attempts = 0
-    while attempts < 10:
-        try:
-            time.sleep(5)
-            up = cmd('kubectl --context=dev cluster-info 2>/dev/null || :', output=True)
-            assert up != ''
-            break
-        except:
-            attempts += 1
-
-    cmd('kubectl --cluster=dev create -f k8s/ui.yaml')
-    cmd('kubectl --cluster=dev create -f k8s/dns.yaml')
-    log.info('Access kube cluster using *kubectl --context=dev*')
-    cmd('kubectl --namespace=default --context=dev cluster-info')
-
-
-def _stop_kubernetes(args):
-    """Stop\Cleanup kubernetes on docker machine"""
-
-    log.info('Stopping\Cleaning Kubernetes dev cluster')
-    cmd('%s && docker-compose -f compose/kubernetes-dev.yml down' % args.env)
-    cmd('%s && docker ps -a -f "name=k8s_" -q | xargs docker rm -f' % args.env)
-
-    # BUG: https://github.com/kubernetes/kubernetes/issues/23197
-    clean_cmd = 'mount | grep -o "on /var/lib/kubelet.* type" | cut -c 4-' \
-                ' | rev | cut -c 6- | rev | sort -r' \
-                ' | xargs --no-run-if-empty sudo umount' \
-                ' && sudo rm -Rf /var/lib/kubelet'
-
-    if args.active_machine:
-        cmd('docker-machine ssh %s \'%s\'' % (args.active_machine, clean_cmd))
+    cmd('ansible-playbook %(playbook)s -i 127.0.0.1,' % locals())
 
 
 def _check_for_update():
@@ -249,24 +118,27 @@ def _check_for_update():
         pickle.dump(now, open(last_checked_file, "wb"))
 
 
+def _deprecated(args):
+    """This command has been removed"""
+    log.error('docker-dev no longer supports this command')
+    log.error('Please run "docker-dev --help" for more info')
+
+
 def main():
     """Setup and invoke docker-dev environment"""
     logging.basicConfig(stream=sys.stderr, format='[%(levelname)s] %(message)s')
 
-    env = os.environ.keys()
-    os.environ.update({k:v for k,v in DEFAULT_MACHINE_ENV.iteritems() if k not in env})
-
-    bare_commands = [ls, kup, kdown]
-    name_commands = [create, start, stop, rm, upgrade]
+    commands = [upgrade, version]
+    deprecated_commands = ["ls", "kup", "kdown", "create", "start", "stop", "rm"]
 
     subparsers = parser.add_subparsers()
-    for command in bare_commands + name_commands:
+    for command in commands:
         s = subparsers.add_parser(command.__name__, help=command.__doc__)
-        if command in name_commands:
-            s.add_argument('MACHINE_NAME', nargs='?', default=os.getenv('MACHINE_NAME', 'dev'))
-        if command in bare_commands:
-            s.add_argument('MACHINE_NAME', nargs='?', default=None)
         s.set_defaults(func=command)
+
+    for command in deprecated_commands:
+        s = subparsers.add_parser(command, help=_deprecated.__doc__)
+        s.set_defaults(func=_deprecated)
 
     args = parser.parse_args()
 
@@ -274,14 +146,6 @@ def main():
         log.setLevel(logging.DEBUG)
     else:
         log.setLevel(logging.INFO)
-
-    if args.MACHINE_NAME:
-        args.env = 'eval "$(docker-machine env %s)"' % args.MACHINE_NAME
-        args.active_machine = args.MACHINE_NAME
-    else:
-        log.warn('Assuming currently configured docker environment')
-        args.env = ':'
-        args.active_machine = cmd('docker-machine active || :', output=True).strip()
 
     _check_for_update()
     diff = cmd('git log remotes/origin/master ^HEAD', output=True)
